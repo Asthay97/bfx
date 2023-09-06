@@ -1,11 +1,6 @@
 # bitfinex
 
 # The BFX challenge
-
-
-
-Hi and congratulations to your progress with Bitfinex!
-
 Your task is to create a simplified distributed exchange
 
 * Each client will have its own instance of the orderbook.
