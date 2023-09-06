@@ -12,35 +12,35 @@ link.start()
 const peer = new PeerRPCClient(link, {})
 peer.init()
 
-
-// Instantiate an empty order book
 const orderBook = new OrderBook();
-  
-// Place buy and sell orders
-orderBook.placeBuyOrder(100, 10);
-orderBook.placeSellOrder(102, 6);
 
-// Execute trades
-// const trade1 = orderBook.executeTrade();
-// const trade2 = orderBook.executeTrade();
+// // const trade1 = orderBook.executeTrade();
+// const currentOrderBook = orderBook.getOrderBook();
 
-// Get the current order book state
-const currentOrderBook = orderBook.getOrderBook();
-
-// console.log('Trades2:', trade1, trade2);
-console.log('Current Order Book2:', currentOrderBook);
-
-peer.request('rpc_test', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
+peer.request('pushOrder', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
   if (err) {
     console.error(err)
     process.exit(-1)
   }
-  console.log(data)
+  // push sell and buy orders to server
+  orderBook.placeBuyOrder(100, 10);
+  orderBook.placeSellOrder(102, 6);
 })
-peer.request('get_orderBook', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
+
+peer.request('updateOrderBook', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
   if (err) {
     console.error(err)
     process.exit(-1)
   }
-  console.log(JSON.stringify(data)) // { msg: 'world' }
+  // listen to server to update own order book
+  orderBook = data;
+  console.log(JSON.stringify(data))
+})
+
+peer.request('matchOrder', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
+  if (err) {
+    console.error(err)
+    process.exit(-1)
+  }
+  // check if order matches, send to server to remove the order and re-add the order
 })
