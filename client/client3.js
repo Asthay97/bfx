@@ -2,7 +2,6 @@
 
 const { PeerRPCClient }  = require('grenache-nodejs-http')
 const Link = require('grenache-nodejs-link')
-const OrderBook = require('./orderbookFile'); 
 
 const link = new Link({
   grape: 'http://127.0.0.1:30001'
@@ -12,35 +11,120 @@ link.start()
 const peer = new PeerRPCClient(link, {})
 peer.init()
 
+let orderBook = {
+  buyOrders: [],
+  sellOrders: [],
+};
 
-// Instantiate an empty order book
-const orderBook = new OrderBook();
+function getOrderBooks() {
+  return {
+    buyOrders: orderBook.buyOrders,
+    sellOrders: orderBook.sellOrders,
+  };
+}
+// Place a buy order
+function placeBuyOrder(price, quantity) {
+  orderBook.buyOrders.push({ price, quantity });
+  sortOrdersByPrice(orderBook.buyOrders);
+}
+
+// Place a sell order
+function placeSellOrder(price, quantity) {
+  orderBook.sellOrders.push({ price, quantity });
+  sortOrdersByPrice(orderBook.sellOrders);
+}
+// Utility function to sort orders by price (ascending)
+function sortOrdersByPrice(orders) {
+  orders.sort((a, b) => a.price - b.price);
+}
+
+function placeOrder(orders, amount, quantity) {
+  if(orders === 'buy'){
+    placeBuyOrder(amount, quantity);
+  }
+  else{
+    placeSellOrder(amount, quantity);
+  }
+  const currentOrderBook = getOrderBooks();
+  const message = {
+    orders: orders,
+    amount: amount,
+    quantity: quantity
+  }
+  peer.request('push_order', { msg: message }, { timeout: 10000 }, (err, data) => {
+    if (err) {
+      console.error(err)
+      process.exit(-1)
+    }
+    console.log('current order book', currentOrderBook);
+  })
+}
+
+setInterval(function () {
+  peer.request('update_orderbook', { msg: 'currentOrderBook' }, { timeout: 10000 }, (err, data) => {
+    if (err) {
+      console.error(err)
+      process.exit(-1)
+    }
+    orderBook = data.msg;
+    console.log('orderbook received', JSON.stringify(getOrderBooks()))
+  })
+}, 5000)
+
+async function executeTrade(bestBuyOrder, bestSellOrder){
+  const quantity = Math.min(bestBuyOrder.quantity, bestSellOrder.quantity);
+    orderBook.buyOrders[0].quantity -= quantity;
+    orderBook.sellOrders[0].quantity -= quantity;
+    if (bestBuyOrder.quantity === 0) {
+      orderBook.buyOrders.shift();
+    }
+    if (bestSellOrder.quantity === 0) {
+      orderBook.sellOrders.shift();
+    }
+    return { 
+      price: bestSellOrder.price, quantity 
+    };
+  }
   
-// Place buy and sell orders
-orderBook.placeBuyOrder(202, 8);
-orderBook.placeSellOrder(190, 4);
 
-// Execute trades
-// const trade1 = orderBook.executeTrade();
-// const trade2 = orderBook.executeTrade();
-
-// Get the current order book state
-const currentOrderBook = orderBook.getOrderBook();
-
-// console.log('Trades2:', trade1, trade2);
-console.log('Current Order Book2:', currentOrderBook);
-
-peer.request('rpc_test', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
-  if (err) {
-    console.error(err)
-    process.exit(-1)
+setInterval(async function () {
+  if (orderBook.buyOrders.length === 0 || orderBook.sellOrders.length === 0) {
+    return "No orders to trade"; 
   }
-  console.log(data) // { msg: 'world' }
-})
-peer.request('get_orderBook', { msg: currentOrderBook }, { timeout: 10000 }, (err, data) => {
-  if (err) {
-    console.error(err)
-    process.exit(-1)
-  }
-  console.log(JSON.stringify(data)) // { msg: 'world' }
-})
+
+  const bestBuyOrder = orderBook.buyOrders[0];
+  const bestSellOrder = orderBook.sellOrders[0];
+  
+  // check if order matches
+  if (bestBuyOrder.price >= bestSellOrder.price) {
+
+    // tempOrderBook - remove first orders
+    let tempOrderBook = orderBook
+    tempOrderBook.buyOrders.shift()
+    tempOrderBook.sellOrders.shift()
+
+    // tempOrderBook => Server
+    peer.request('match_order', { msg: tempOrderBook }, { timeout: 10000 }, (err, data) => {
+            if (err) {
+              console.error(err)
+              process.exit(-1)
+            }
+        console.log('after removing temp element',data);
+    })
+
+    await executeTrade(bestBuyOrder, bestSellOrder);
+    
+     // server - orderBook original
+     peer.request('match_order', { msg: tempOrderBook }, { timeout: 10000 }, (err, data) => {
+      if (err) {
+        console.error(err)
+        process.exit(-1)
+      }
+      console.log('after trade executed',data);
+    })
+   
+  } 
+  return "No trade executed";  
+}, 6000)
+
+module.exports = placeOrder;
